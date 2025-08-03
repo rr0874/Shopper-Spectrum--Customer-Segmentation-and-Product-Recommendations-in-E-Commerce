@@ -16,18 +16,32 @@ st.title("🛒 Shopper Spectrum: E-Commerce Intelligence App")
 page = st.sidebar.radio("📌 Select Module", ["Home", "Customer Segmentation", "Product Recommendation"])
 
 # Load models and data
-@st.cache_resource
+from sklearn.metrics.pairwise import cosine_similarity
+
+@st.cache_data
 def load_files():
     scaler = joblib.load("rfm_scaler.pkl")
     kmeans = joblib.load("rfm_kmeans_model.pkl")
     rfm_data = pd.read_csv("rfm_clustered.csv")
-    product_similarity = pd.read_csv("product_similarity_matrix.csv", index_col=0)
-    product_map = pd.read_csv("product_description_map.csv")
-    product_dict = pd.Series(product_map.Description.values, index=product_map.StockCode.astype(str)).to_dict()
-    reverse_dict = {v.upper(): k for k, v in product_dict.items()}
-    return scaler, kmeans, rfm_data, product_similarity, product_dict, reverse_dict
 
-scaler, kmeans, rfm_data, product_similarity_df, product_dict, reverse_lookup = load_files()
+    # Generate CustomerID vs StockCode matrix
+    pivot = pd.pivot_table(
+        rfm_data,
+        values='InvoiceNo',
+        index='CustomerID',
+        columns='StockCode',
+        aggfunc='count'
+    ).fillna(0)
+
+    # Compute cosine similarity matrix between products
+    product_similarity = cosine_similarity(pivot.T)
+    product_similarity_df = pd.DataFrame(product_similarity, index=pivot.columns, columns=pivot.columns)
+
+    # Load product name mapping
+    product_dict = pd.read_csv("product_description_map.csv", index_col=0).to_dict()["Description"]
+    reverse_lookup = {v: k for k, v in product_dict.items()}
+
+    return scaler, kmeans, rfm_data, product_similarity_df, product_dict, reverse_lookup
 
 # ------------------------ MODULE: Home ------------------------
 if page == "Home":
@@ -84,3 +98,4 @@ elif page == "Product Recommendation":
                 st.markdown(f"- **{name}** (Code: `{code}`) — Similarity: `{round(similar[code], 3)}`")
         else:
             st.error("❌ Product not found. Please enter an exact product name.")
+
